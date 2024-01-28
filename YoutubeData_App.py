@@ -10,7 +10,14 @@ def submit_button_click():
         status_label.update()
         return 0
     else:
-        s = md.process(url.get(), filedialog.askdirectory())
+        directory = filedialog.askdirectory()
+        
+        if directory == "":
+            status_label.configure(text="400 Bad Request", font=("Arial", 8, "bold"), text_color="red")
+            status_label.update()
+            return 0
+        
+        s = md.process(url.get(), directory)
         
         if s == '200 OK':
             status_label.configure(text=s, font=("Arial", 8, "bold"), text_color="green")
@@ -48,5 +55,11 @@ submit_button = customtkinter.CTkButton(app,
     command = lambda: submit_button_click()
 )
 submit_button.pack( pady=10 )
+
+exit_button = customtkinter.CTkButton(app,
+    text = "Exit", 
+    command = lambda: app.destroy()
+)
+exit_button.pack( pady=10 )
 
 app.mainloop()

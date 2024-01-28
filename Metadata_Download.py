@@ -5,28 +5,25 @@ import requests
 import json
 import bs4
 import pandas as pd
-import openpyxl as xl
+import json
 import datetime
 from youtube_transcript_api import YouTubeTranscriptApi, formatters
-
-import tkinter
-import customtkinter
 
 import threading # for multithreading
 
 max_num_threads = 10 # max number of threads to run at once
 
+total_api_calls = 0 # total number of api calls made
+max_api_calls = 261 # max number of api calls allowed
 API_Key = os.environ.get('YT_API_KEY')
 
-def getChannelID(channel_url):
+def getChannelID(channel_url): # this function uses no api calls
     """
     Given a YouTube channel URL, returns the channel ID and channel name.
     """
-    
     try: 
         request = requests.get(channel_url)
         html = bs4.BeautifulSoup(request.text, 'html.parser')
-        
         json_script = html.find("script", {"type": "application/ld+json"})
         channel_id = json.loads(json_script.text)['itemListElement'][0]['item']['@id'].split('/')[-1]
         channel_name = json.loads(json_script.text)['itemListElement'][0]['item']['name']
@@ -34,30 +31,38 @@ def getChannelID(channel_url):
     except:
         return None, None
 
-youtube = googleapiclient.discovery.build(
+youtube = googleapiclient.discovery.build( 
     "youtube", "v3", developerKey=API_Key)
 
-def get_playlist(channel_id):
+def get_playlist(channel_id): # this function uses 1 api call per channel
+    global total_api_calls  # Declare total_api_calls as a global variable
     request = youtube.channels().list(
         part="contentDetails",
         id=channel_id
     )
     response = request.execute()
+    
+    total_api_calls += 1
+    
     upload_playlist_id = response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
     return upload_playlist_id
 
-def get_playlist_items(playlist_id):
-    
+def get_playlist_items(playlist_id): 
+    global total_api_calls  # Declare total_api_calls as a global variable
     request = youtube.playlistItems().list(
         part="contentDetails",
         playlistId=playlist_id,
         maxResults=1
     )
-    
+    total_api_calls += 1
     response = request.execute()
     videos = [response['items'][0]['contentDetails']['videoId']]
     
-    total_video = response['pageInfo']['totalResults']
+    total_video = response['pageInfo']['totalResults'] 
+    
+    if total_video > (max_api_calls - total_api_calls):
+        return '400 Bad Request: API calls exceeded'
+    
     counts = len(response['items'][0]['contentDetails']['videoId'])
     
     while 'nextPageToken' in response:
@@ -69,6 +74,7 @@ def get_playlist_items(playlist_id):
             pageToken=nextPage
         )
         response = request.execute()
+        total_api_calls += 1
         counts += len(response['items'][0]['contentDetails']['videoId'])
         
         for i in range(len(response['items'])):
@@ -77,7 +83,7 @@ def get_playlist_items(playlist_id):
     return videos
 
 def get_video_metadata(video_id):
-    
+    global total_api_calls  # Declare total_api_calls as a global variable
     video_meta_data = []
     
     for v_id in video_id:
@@ -87,6 +93,7 @@ def get_video_metadata(video_id):
         )
         response = request.execute()
         video_meta_data.extend(response['items'])
+        total_api_calls += 1
         
     return video_meta_data
 
@@ -96,7 +103,6 @@ def process_video_metadata(video_metadata): # this function needs to be faster
     channel_id, video_id, descriptions, title, publishedAt, thumbnail
     '''
     
-    # pd.set_option('display.max_columns', None)
     df = pd.DataFrame([], columns=['channel_id', 'video_id', 'video_description', 'video_title', 'video_publishedAt', 'video_thumbnail'])
     
     for metadata in video_metadata:
@@ -151,10 +157,57 @@ def get_transcript(video_ids, pathToDir):
                 # write with the video_id as the file name
                 file.write(video_srt_transcript)
 
+
+def check_last_modified_date():
+    '''
+    This function will check the last modified date of the excel file and return the date
+    '''
+    global total_api_calls  # Declare total_api_calls as a global variable
+    global max_api_calls # Declare max_api_calls as a global variable
+    
+    with open('lastModified.json', 'r') as file:
+        lastModified = json.load(file)
+    
+    lastModified_Date = datetime.datetime.strptime(lastModified['lastModified'], '%Y-%m-%dT%H:%M:%SZ')
+    current_Date = datetime.datetime.now()
+    
+    if((current_Date - lastModified_Date).days >= 1):
+        lastModified['total_api_calls'] = 0
+        total_api_calls = 0
+        
+        lastModified['lastModified'] = current_Date.strftime('%Y-%m-%dT%H:%M:%SZ')
+    else:
+        total_api_calls = lastModified['total_api_calls']
+        
+    with open('lastModified.json', 'w') as file:
+        json.dump(lastModified, file)
+        
+def save_last_count():
+    '''
+    This function will save the last count of the total_api_calls
+    '''
+    global total_api_calls  # Declare total_api_calls as a global variable
+    
+    with open('lastModified.json', 'r') as file:
+        lastModified = json.load(file)
+        
+    lastModified['total_api_calls'] = total_api_calls
+    
+    with open('lastModified.json', 'w') as file:
+        json.dump(lastModified, file)
+    
+
 def process(url, path):
     '''
     This function will be called by the main script. It will call all the other functions in this file.
     '''
+    global total_api_calls  # Declare total_api_calls as a global variable
+    global MAX_CALLS # Declare MAX_CALLS as a global variable
+    
+    check_last_modified_date() # check the last modified date of the excel file and reset the total_api_calls if necessary
+    
+    if(total_api_calls >= max_api_calls*0.8):
+        return '400 Bad Request: API calls exceeded' 
     
     print('Processing channel: ' + url + "\n\n\n")
     response = getChannelID(url)
@@ -170,6 +223,9 @@ def process(url, path):
         
         playlist_id = get_playlist(channel_id)
         videos_ids = get_playlist_items(playlist_id)
+        
+        if(videos_ids == '400 Bad Request: API calls exceeded'):
+            return '400 Bad Request: API calls exceeded'
         
         print('Number of videos: ' + str(len(videos_ids)) + "\n\n\n")
         
@@ -218,5 +274,8 @@ def process(url, path):
             thread.join() # wait for the thread to finish
             
         print('Finished processing transcripts...\n\n\n')
-            
+        print('Total API calls: ' + str(total_api_calls) + "\n\n\n")
+    
+        save_last_count() # save the last count of the total_api_calls
+        
         return '200 OK' # return a status code of 200 OK
