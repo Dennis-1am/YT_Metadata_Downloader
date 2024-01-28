@@ -69,4 +69,4 @@ if [ -n "${BASH:-}" -o -n "${ZSH_VERSION:-}" ] ; then
 fi
 
 # export the youtube api key as an environment variable
-export YT_API_KEY="AIzaSyBXSsKWzuL06jQGffwrF_kAI75WGd2y5Rg"
+export YT_API_KEY=""
