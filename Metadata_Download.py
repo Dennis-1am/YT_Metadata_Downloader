@@ -8,14 +8,15 @@ import pandas as pd
 import json
 import datetime
 from youtube_transcript_api import YouTubeTranscriptApi, formatters
-
+import yt_dlp
 import threading # for multithreading
+import check
 
 max_num_threads = 10 # max number of threads to run at once
 
 total_api_calls = 0 # total number of api calls made
-max_api_calls = 261 # max number of api calls allowed
-API_Key = os.environ.get('YT_API_KEY')
+max_api_calls = 10000 # max number of api calls allowed
+API_Key = "AIzaSyBXSsKWzuL06jQGffwrF_kAI75WGd2y5Rg" # get the API key from the environment variables
 
 def getChannelID(channel_url): # this function uses no api calls
     """
@@ -195,8 +196,41 @@ def save_last_count():
     
     with open('lastModified.json', 'w') as file:
         json.dump(lastModified, file)
-    
+        
+def downloadVideo(video_ids, output_dir, 
+                  format='best', 
+                  ext='mp4'): 
+    '''
+        Download a youtube video using yt-dlp
+    '''
+        
+    #print the path to the output directory
+    print('Output directory: ' + output_dir + "\n\n\n")
 
+    # create yt-dlp options
+    ydl_opts = {
+        'format': format,
+        'outtmpl': os.path.join(output_dir, f'%(id)s.%(ext)s'),
+        'quiet': False,
+        'nooverwrites': False,
+        'merge_output_format': ext,
+        'external-downloader': 'ffmpeg',
+    }
+
+    # download the video
+    if len(video_ids) > 1:
+        for video_id in video_ids:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([video_id])
+    else:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            try :
+                ydl.download(video_ids)
+            except:
+                print('Video not found: ' + video_ids[0] + "\n\n\n")
+                return
+
+    
 def process(url, path):
     '''
     This function will be called by the main script. It will call all the other functions in this file.
@@ -264,18 +298,56 @@ def process(url, path):
             # create a thread
             thread = threading.Thread(target=get_transcript, args=(videos_ids_split[i], path + directory + 'transcripts/'))
             threads.append(thread)
-            
-            # start the thread
             thread.start()
             print('Started thread ' + str(i) + "\n\n\n")
             
         # wait for all threads to finish
         for thread in threads:
             thread.join() # wait for the thread to finish
+        
+        
+        download_threads = []
+        total = 0
+        for i in range(num_threads):
+            # create a thread
+            total += len(videos_ids_split[i])
+            thread = threading.Thread(target=downloadVideo, args=(videos_ids_split[i], path + directory + 'videos/'))
+            download_threads.append(thread)
+            thread.start()
+            print('Started download thread ' + str(i) + "\n\n\n")
+        
+        # wait for all threads to finish
+        for thread in download_threads:
+            thread.join()
             
-        print('Finished processing transcripts...\n\n\n')
+        print('Total videos downloaded: ' + str(total) + "\n\n\n")
+        
         print('Total API calls: ' + str(total_api_calls) + "\n\n\n")
     
         save_last_count() # save the last count of the total_api_calls
         
+        missing = check.check(videos_ids) # check the storing data test folder and compare the transcript directory with the video directory
+        
+        if len(missing) > 1:
+            print('Missing files: ' + str(missing[0]) + "\n\n\n")
+            for missing_video in missing:
+                print('Missing video: ' + missing_video + "\n\n\n")
+                get_transcript([missing_video], path + directory + 'transcripts/')
+                downloadVideo([missing_video], path + directory + 'videos/')
+        elif len(missing) == 1:
+            print('Missing video: ' + missing[0] + "\n\n\n")
+            get_transcript([missing[0]], path + directory + 'transcripts/')
+            downloadVideo([missing[0]], path + directory + 'videos/')
+        
+        if total_api_calls >= max_api_calls*0.7:
+            return '200 OK: API CALLS LEFT: ' + str(max_api_calls - total_api_calls) + ' (API calls exceeded)'
+        
         return '200 OK' # return a status code of 200 OK
+
+# now: 0:03:20.947991 for 52 videos so 1 video takes 3.84 seconds
+# start = datetime.datetime.now()
+# print(process("https://www.youtube.com/@lehighuniversitycollegeofh8224", "/Users/dennis/Work Study/Youtube Data Project/YT_Metadata_Downloader/storing data test/"))
+# end = datetime.datetime.now()
+# print('Time taken: ' + str(end - start))
+
+# get_transcript(['Ak7aQFtm7S0'], '/Users/dennis/Work Study/Youtube Data Project/YT_Metadata_Downloader/storing data test/Lehigh University College of Health/transcripts')
