@@ -1,15 +1,16 @@
+import datetime
+import json
 import os
+import threading  # for multithreading
+
+import bs4
 import googleapiclient.discovery
 import googleapiclient.errors
-import requests
-import json
-import bs4
 import pandas as pd
-import json
-import datetime
-from youtube_transcript_api import YouTubeTranscriptApi, formatters
+import requests
 import yt_dlp
-import threading # for multithreading
+from youtube_transcript_api import YouTubeTranscriptApi, formatters
+
 import check
 
 max_num_threads = 10 # max number of threads to run at once
@@ -214,7 +215,7 @@ def downloadVideo(video_ids, output_dir,
         'quiet': False,
         'nooverwrites': False,
         'merge_output_format': ext,
-        'external-downloader': 'ffmpeg',
+        'external-downloader': 'aria2p',
     }
 
     # download the video
@@ -241,7 +242,7 @@ def process(url, path):
     check_last_modified_date() # check the last modified date of the excel file and reset the total_api_calls if necessary
     
     if(total_api_calls >= max_api_calls*0.8):
-        return '400 Bad Request: API calls exceeded' 
+        return '400 Bad Request: API calls exceeded'
     
     print('Processing channel: ' + url + "\n\n\n")
     response = getChannelID(url)
@@ -344,10 +345,9 @@ def process(url, path):
         
         return '200 OK' # return a status code of 200 OK
 
-# now: 0:03:20.947991 for 52 videos so 1 video takes 3.84 seconds
+# now:Time taken: 0:29:19.692799 for 52 videos so 1 video takes 1.79 minutes per video on 30mb download
+# will be much faster on a faster internet connection such as Lehigh University's internet connection
 # start = datetime.datetime.now()
 # print(process("https://www.youtube.com/@lehighuniversitycollegeofh8224", "/Users/dennis/Work Study/Youtube Data Project/YT_Metadata_Downloader/storing data test/"))
 # end = datetime.datetime.now()
 # print('Time taken: ' + str(end - start))
-
-# get_transcript(['Ak7aQFtm7S0'], '/Users/dennis/Work Study/Youtube Data Project/YT_Metadata_Downloader/storing data test/Lehigh University College of Health/transcripts')
