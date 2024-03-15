@@ -20,7 +20,7 @@
 ## After activating the virtual environment, install the required packages
 
 1. Type `pip install -r requirements.txt` and press `enter`.
-
+ 
 ## After activating the virtual environment, run the program
 
 1. Type `python terminal_app.py` and press `enter`.
